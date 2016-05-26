@@ -7,7 +7,10 @@ Bayesian measurement of A/B Tests.
 ABayesian provides an API for using Bayesian statistics to determine the probability that one leg of an A/B test is better than the other in the long run. You can measure the following types of experiments:
 
 * Repeated Bernoulli trials (Beta-Binomial)
-* Average arrival rates (Poisson-Gamma)
+* Arrival data (Poisson-Gamma)
+* Sequential, normally distributed data (Gaussian, Gaussian-Gaussian)
+
+Generally speaking, Bayesian statistics are a safer way to test hypotheses and help compensate for sample size issues.
 
 ### How does it work?
 Each leg of the A/B test is treated as is treated as it's own probability distribution, and a posterior distribution is calculated based on the input data. The final step is to determine the probability that one leg of the A/B test is greater than the other, which is representative of the long term probability that a leg was a winner.

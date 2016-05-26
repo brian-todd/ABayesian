@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 
 import numpy as np
+
+from numpy.linalg import solve
+
+from scipy.stats import norm
 from scipy.special import beta
 from scipy.special import betaln
 
@@ -67,8 +71,7 @@ class BetaBinomial(ABMeasure):
                 beta_2 = betaln(1 + i, beta_B) + betaln(alpha_A, beta_A)
                 self.prob += np.exp(beta_1 - np.log(beta_B + i) - beta_2)
 
-        # Floating point errors can result in the probability being slightly
-        # above 1.
+        # Correct floating point errors.
         if self.prob > 1.:
             self.prob = 1.
 
@@ -184,7 +187,7 @@ class PoissonGamma(ABMeasure):
         interval_B: int
             Total number of intervals on leg B of the test.
         """
-        
+
         self.prob = 0
 
         alpha_A = arrivals_A
@@ -195,14 +198,13 @@ class PoissonGamma(ABMeasure):
         # Compute the probability that A > B.
         for i in np.arange(alpha_A):
             log_numer = (i * np.log(beta_A)) + (alpha_B * np.log(beta_B)) - ((alpha_B + i) * np.log(beta_B + beta_A))
-            log_denom =  np.log(i + alpha_B) + betaln(i + 1, alpha_B)
+            log_denom = np.log(i + alpha_B) + betaln(i + 1, alpha_B)
             self.prob += np.exp(log_numer - log_denom)
 
         # Compute converse to determine B > A
         self.prob = 1 - self.prob
 
-        # Floating point errors can result in the probability being slightly
-        # above 1.
+        # Correct floating point errors.
         if self.prob > 1.:
             self.prob = 1.
 
@@ -225,7 +227,6 @@ class PoissonGamma(ABMeasure):
         """
 
         return self.compare(arrivals_A, 1, arrivals_B, 1)
-
 
 
     def compare_many(self, arrivals, interval, comparisons):
@@ -280,3 +281,134 @@ class PoissonGamma(ABMeasure):
             self.comparisons[name] = self.compare_constant(data, arrivals)
 
         return self.comparisons
+
+
+class Gaussian(ABMeasure):
+    """
+    Calculate statistical metrics for standard A/B tests using a normal
+    distribution.
+    """
+
+
+    def compare(self, x_A, x_B):
+        """
+        Compute the probability that B > A.
+
+        Parameters
+        -----------
+
+        x_A: numpy.ndarray
+            Raw data for leg A.
+
+        x_B: numpy.ndarray
+            Raw data for leg B.
+        """
+
+        self.prob = 0.
+
+        # Compute mean and variance for distribution.
+        self.mean_A = x_A.mean()
+        self.mean_B = x_B.mean()
+        self.std_A = x_A.std()
+        self.std_B = x_B.std()
+
+        # Compute probability.
+        self.mu = self.mean_B - self.mean_A
+        self.sigma = np.sqrt(self.std_B + self.std_A)
+        self.prob = 1 - norm.cdf(-1. * self.mu / float(self.sigma))
+
+        # Correct floating point errors.
+        if self.prob > 1.:
+            self.prob = 1.
+
+        return self.prob
+
+
+    def compare_many(self, x, comparisons):
+        """
+        Compute the probability that B > A given a normal distribution
+        for many legs of an A/B test.
+
+        Parameters
+        -----------
+
+        x: numpy.ndarray
+            Raw data from the test.
+
+        comparisons : {test : data}
+            Dictionary of legs which include a sigle numpy array per entry.
+        """
+
+        self.prob = 0
+        self.comparisons = {}
+
+        for name, data in comparisons.iteritems():
+            self.comparisons[name] = self.compare(data[0], data[1], arrivals, interval)
+
+        return self.comparisons
+
+
+class GaussianGaussian(ABMeasure):
+    """
+    Calculate statistical metrics for standard A/B tests using a normal
+    distribution with a normal distribution as a prior.
+    """
+
+
+    def compare(self, x_A, x_B, diffusive=1.):
+        """
+        Compute the probability that B > A given a normal distribution as a prior.
+
+        Parameters
+        -----------
+
+        x_A: numpy.ndarray
+            Raw data for leg A.
+
+        x_B: numpy.ndarray
+            Raw data for leg B.
+
+        diffusive: float
+            Diffusive constant for determining variance in the prior.
+        """
+
+        self.prob = 0.
+        self.diffusive = diffusive
+
+        self.std_A = x_A.std()
+        self.std_B = x_B.std()
+
+        # Derive prior hyperparameters.
+        A = np.array([[1, 2], [1, -2]])
+        b_A = np.array([x_A.max(), x_A.min()])
+        b_B = np.array([x_B.max(), x_B.min()])
+
+        self.mu_hyper_A, self.sigma_hyper_A = solve(A, b_A)
+        self.mu_hyper_B, self.sigma_hyper_B = solve(A, b_B)
+
+        # Force diffusive prior.
+        self.sigma_hyper_A = self.diffusive * self.sigma_hyper_A
+        self.sigma_hyper_B = self.diffusive * self.sigma_hyper_B
+
+        # Derive parameters for posterior distribution.
+        mu_number_A = self.mu_hyper_A / float(self.sigma_hyper_A ** 2) + x_A.sum() / float(self.std_A)
+        mu_number_B = self.mu_hyper_B / float(self.sigma_hyper_B ** 2) + x_B.sum() / float(self.std_B)
+        mu_denom_A = 1 / float(self.sigma_hyper_A ** 2) + len(x_A) / float(self.std_A)
+        mu_denom_B = 1 / float(self.sigma_hyper_B ** 2) + len(x_B) / float(self.std_B)
+
+        self.mu_A = mu_number_A / float(mu_denom_A)
+        self.mu_B = mu_number_B / float(mu_denom_B)
+
+        self.sigma_A = ((1 / self.sigma_hyper_A ** 2) + (len(x_A) / self.std_A)) ** -1.
+        self.sigma_B = ((1 / self.sigma_hyper_B ** 2) + (len(x_B) / self.std_B)) ** -1.
+
+        # Compute probability.
+        self.mu = self.mu_B - self.mu_A
+        self.sigma = np.sqrt(self.sigma_B ** 2 + self.sigma_A ** 2)
+        self.prob = 1 - norm.cdf(-1. * self.mu / float(self.sigma))
+
+        # Correct floating point errors.
+        if self.prob > 1.:
+            self.prob = 1.
+
+        return self.prob

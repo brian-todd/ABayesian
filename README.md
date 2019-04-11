@@ -10,15 +10,14 @@ ABayesian provides an API for using Bayesian statistics to determine the probabi
 * Arrival data (Poisson-Gamma)
 * Sequential, normally distributed data (Gaussian, Gaussian-Gaussian)
 
-Generally speaking, Bayesian statistics are a safer way to test hypotheses and help compensate for sample size issues.
-
 ### How does it work?
-Each leg of the A/B test is treated as is treated as it's own probability distribution, and a posterior distribution is calculated based on the input data. The final step is to determine the probability that one leg of the A/B test is greater than the other, which is representative of the long term probability that a leg was a winner.
+For each leg of an A/B test parameters are fit to a posterior distribution based on a non-informative prior. This provides us with posterior probability distributions for each leg. The next step is computing the probability that one posterior distribution is greater than the other. [The derivation of the proceess in closed form can be found here, courtesy of Evan Miller.](http://www.evanmiller.org/bayesian-ab-testing.html)
 
 ### Examples
 Each test is treated as a separate class:
 ```python
-import abayesian
+from abayesian.beta_binomial import BetaBinomial
+from abayesian.poisson_gamma import PoissonGamma
 
 test1 = abayesian.BetaBinomial()
 test2 = abayesian.PoissonGamma()
@@ -29,3 +28,4 @@ test1.compare(5, 100, 10, 100)
 test2.compare(10, 2, 5, 1)
 ```
 Each of the returned values is the probability that B > A.
+

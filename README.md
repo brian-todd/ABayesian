@@ -19,8 +19,8 @@ Each test is treated as a separate class:
 from abayesian.beta_binomial import BetaBinomial
 from abayesian.poisson_gamma import PoissonGamma
 
-test1 = abayesian.BetaBinomial()
-test2 = abayesian.PoissonGamma()
+test1 = BetaBinomial()
+test2 = PoissonGamma()
 ```
 Both tests have a method that compares two tests:
 ```python
